@@ -1,5 +1,7 @@
 import { RAW, CENTROS } from "./data.js";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { supabase, isSupabaseConfigured } from "./supabaseClient.js";
+import InventoryManager from "./InventoryManager.jsx";
 
 const PERIODS=[
   {key:"LISTO",label:"Disponible",color:"#5B9A6F"},
@@ -20,6 +22,25 @@ export default function App(){
   const items=useMemo(()=>parse(RAW),[]);
   const [view,setView]=useState("timeline");
   const [drill,setDrill]=useState(null);
+  const [entries,setEntries]=useState([]);
+
+  const fetchEntries=useCallback(async()=>{
+    if(!isSupabaseConfigured())return;
+    try{
+      const{data}=await supabase.from("inventory_entries").select("*");
+      setEntries(data||[]);
+    }catch(e){console.error(e);}
+  },[]);
+  useEffect(()=>{fetchEntries();},[fetchEntries]);
+  // Re-fetch when switching to inventory view
+  useEffect(()=>{if(view==="inventario")fetchEntries();},[view,fetchEntries]);
+
+  // Build received map: "item_code|centro" -> total received
+  const receivedMap=useMemo(()=>{
+    const m={};
+    entries.forEach(e=>{const k=e.item_code+"|"+e.centro_consumo;m[k]=(m[k]||0)+e.quantity_received;});
+    return m;
+  },[entries]);
 
   const tlData=useMemo(()=>{
     const g=new Map();
@@ -58,6 +79,7 @@ export default function App(){
           <div style={{display:"flex",gap:6}}>
             <Pill active={view==="timeline"} onClick={()=>setView("timeline")}>Linea Temporal</Pill>
             <Pill active={view==="overview"} onClick={()=>setView("overview")}>Resumen</Pill>
+            <Pill active={view==="inventario"} onClick={()=>setView("inventario")}>Inventario</Pill>
           </div>
         </div>
         <div style={{fontSize:12,color:C.tl}}>Pre-apertura Feb 2026 | {items.length} items</div>
@@ -188,6 +210,9 @@ export default function App(){
               const co=ci.filter(i=>i.pk==="COMPRAR").length;
               const cf=ci.filter(i=>i.pk==="CONF").length;
               const en=ci.length-av-co-cf;
+              const totalQty=ci.reduce((s,i)=>s+i.qty,0);
+              const recQty=ci.reduce((s,i)=>s+(receivedMap[i.ic+"|"+i.cc]||0),0);
+              const recPct=totalQty>0?Math.round(recQty/totalQty*100):0;
               return(
                 <div key={cc} style={{background:C.cd,borderRadius:16,border:"1px solid "+C.bd,boxShadow:C.sh,padding:18}}>
                   <div style={{display:"flex",justifyContent:"space-between"}}>
@@ -206,10 +231,28 @@ export default function App(){
                     <span style={{color:"#D48A6A"}}>{co} x comprar</span>
                     <span style={{color:"#8E99A4"}}>{cf} x conf.</span>
                   </div>
+                  {entries.length>0&&(
+                    <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid "+C.bl}}>
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:11,marginBottom:6}}>
+                        <span style={{color:C.tm,fontWeight:500}}>Recepcion fisica</span>
+                        <span style={{color:recPct>=100?C.ac:"#B8965A",fontWeight:600}}>{recPct}%</span>
+                      </div>
+                      <div style={{height:4,borderRadius:2,background:C.bl,overflow:"hidden"}}>
+                        <div style={{width:recPct+"%",height:"100%",borderRadius:2,background:recPct>=100?"#5B9A6F":"#B8965A",transition:"width 0.3s"}}/>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10,color:C.tl}}>
+                        <span>{recQty.toLocaleString()} recibidas</span>
+                        <span>{(totalQty-recQty).toLocaleString()} pendientes</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
+        )}
+        {view==="inventario"&&(
+          <InventoryManager items={items} centros={CENTROS}/>
         )}
       </div>
       <div style={{padding:"16px 32px",textAlign:"center",fontSize:10,color:C.tl,borderTop:"1px solid "+C.bd,marginTop:20}}>St. Regis Costa Mujeres | OSE Pre-Opening Inventory</div>
