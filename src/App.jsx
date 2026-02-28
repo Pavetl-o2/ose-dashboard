@@ -22,6 +22,8 @@ export default function App(){
   const items=useMemo(()=>parse(RAW),[]);
   const [view,setView]=useState("timeline");
   const [drill,setDrill]=useState(null);
+  const [periodDrill,setPeriodDrill]=useState(null);
+  const [periodCcFilter,setPeriodCcFilter]=useState("ALL");
   const [entries,setEntries]=useState([]);
 
   const fetchEntries=useCallback(async()=>{
@@ -90,11 +92,13 @@ export default function App(){
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
               {PERIODS.map(p=>{
                 const cnt=items.filter(i=>i.pk===p.key).length;
+                const active=periodDrill===p.key;
                 return(
-                  <div key={p.key} style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,background:C.cd,border:"1px solid "+C.bl}}>
+                  <div key={p.key} onClick={()=>{setPeriodDrill(active?null:p.key);setPeriodCcFilter("ALL");}}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:8,background:active?p.color+"18":C.cd,border:"1px solid "+(active?p.color:C.bl),cursor:"pointer",transition:"all .15s"}}>
                     <div style={{width:8,height:8,borderRadius:4,background:p.color}}/>
-                    <span style={{fontSize:11,color:C.tm,fontWeight:500}}>{p.label}</span>
-                    <span style={{fontSize:10,color:C.tl}}>({cnt})</span>
+                    <span style={{fontSize:11,color:active?p.color:C.tm,fontWeight:active?600:500}}>{p.label}</span>
+                    <span style={{fontSize:10,color:active?p.color:C.tl,fontWeight:active?600:400}}>({cnt})</span>
                   </div>
                 );
               })}
@@ -109,7 +113,7 @@ export default function App(){
                   const cnt=items.filter(i=>i.pk===p.key).length;
                   const pct=cnt/items.length*100;
                   if(pct<.3)return null;
-                  return <div key={p.key} title={p.label+": "+cnt} style={{width:pct+"%",background:p.color,borderRadius:1}}/>;
+                  return <div key={p.key} title={p.label+": "+cnt} onClick={()=>{setPeriodDrill(periodDrill===p.key?null:p.key);setPeriodCcFilter("ALL");}} style={{width:pct+"%",background:p.color,borderRadius:1,cursor:"pointer",transition:"opacity .15s",opacity:periodDrill&&periodDrill!==p.key?.5:1}}/>;
                 })}
               </div>
             </div>
@@ -158,7 +162,8 @@ export default function App(){
                   {PERIODS.map(p=>{
                     const t=items.filter(i=>i.pk===p.key).length;
                     return(
-                      <div key={p.key} style={{textAlign:"center",padding:"10px 4px",borderRight:"1px solid "+C.bl}}>
+                      <div key={p.key} onClick={()=>{setPeriodDrill(periodDrill===p.key?null:p.key);setPeriodCcFilter("ALL");}}
+                        style={{textAlign:"center",padding:"10px 4px",borderRight:"1px solid "+C.bl,cursor:"pointer",background:periodDrill===p.key?p.color+"12":"transparent",transition:"background .15s"}}>
                         <div style={{fontSize:15,fontWeight:700,color:p.color}}>{t}</div>
                         <div style={{fontSize:9,color:C.tl}}>{Math.round(t/items.length*100)}%</div>
                       </div>
@@ -200,6 +205,63 @@ export default function App(){
                 </div>
               </div>
             )}
+            {periodDrill&&(()=>{
+              const p=PERIODS.find(x=>x.key===periodDrill);
+              if(!p)return null;
+              const allPeriodItems=items.filter(i=>i.pk===periodDrill);
+              const ccList=[...new Set(allPeriodItems.map(i=>i.cc))].sort();
+              const filtered=periodCcFilter==="ALL"?allPeriodItems:allPeriodItems.filter(i=>i.cc===periodCcFilter);
+              const grouped=new Map();
+              filtered.forEach(it=>{if(!grouped.has(it.cc))grouped.set(it.cc,[]);grouped.get(it.cc).push(it);});
+              const sortedGroups=[...grouped.entries()].sort((a,b)=>b[1].length-a[1].length);
+              return(
+                <div style={{background:C.cd,borderRadius:16,border:"1px solid "+C.bd,boxShadow:C.sh,marginTop:16,padding:20}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}>
+                    <div>
+                      <div style={{fontSize:11,color:C.tl,letterSpacing:1,fontWeight:500}}>ITEMS POR PERIODO</div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginTop:4}}>
+                        <div style={{width:10,height:10,borderRadius:5,background:p.color}}/>
+                        <span style={{fontSize:16,fontWeight:600,color:p.color}}>{p.label}</span>
+                        <span style={{fontSize:13,color:C.tm}}>({filtered.length} items)</span>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <select value={periodCcFilter} onChange={e=>setPeriodCcFilter(e.target.value)}
+                        style={{padding:"6px 12px",borderRadius:8,border:"1px solid "+C.bd,background:C.ca,fontSize:12,color:C.tx,cursor:"pointer",minWidth:180}}>
+                        <option value="ALL">Todos los centros ({allPeriodItems.length})</option>
+                        {ccList.map(cc=>{
+                          const ccCnt=allPeriodItems.filter(i=>i.cc===cc).length;
+                          return <option key={cc} value={cc}>{cc} ({ccCnt})</option>;
+                        })}
+                      </select>
+                      <button onClick={()=>setPeriodDrill(null)} style={{padding:"6px 16px",background:C.ca,border:"1px solid "+C.bd,borderRadius:8,color:C.tm,fontSize:12,cursor:"pointer"}}>Cerrar</button>
+                    </div>
+                  </div>
+                  <div style={{maxHeight:440,overflowY:"auto"}}>
+                    {sortedGroups.map(([cc,ccItems])=>(
+                      <div key={cc} style={{marginBottom:16}}>
+                        <div style={{fontSize:12,fontWeight:600,color:C.tx,marginBottom:6,display:"flex",alignItems:"center",gap:6,padding:"6px 0",borderBottom:"1px solid "+C.bl}}>
+                          <span>{cc}</span>
+                          <span style={{fontSize:10,color:C.tl,fontWeight:400}}>({ccItems.length} items)</span>
+                        </div>
+                        {ccItems.map(it=>(
+                          <div key={it.id} style={{display:"grid",gridTemplateColumns:"100px 1fr 50px 120px 150px",gap:8,padding:"8px 12px",background:C.ca,borderRadius:8,fontSize:12,alignItems:"center",marginBottom:3,border:"1px solid "+C.bl}}>
+                            <span style={{color:C.ac,fontFamily:"monospace",fontSize:11,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.ic}</span>
+                            <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.desc}</span>
+                            <span style={{textAlign:"right",color:C.tm,fontWeight:600}}>x{it.qty}</span>
+                            <span style={{color:C.tl,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.sup}</span>
+                            <span style={{color:C.tl,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.fecha}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+                    {filtered.length===0&&(
+                      <div style={{textAlign:"center",padding:"24px 0",color:C.tl,fontSize:13}}>No hay items en este periodo</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
         {view==="overview"&&(
